@@ -4,6 +4,14 @@
 > DB: PostgreSQL | Cache: Redis
 > Deploy: Docker Compose | Expose: Cloudflare Tunnel (free)
 
+**Status:**
+- Phase 1 (Foundation): ✅ Complete — Docker, Auth, Devices, WebSocket, Logging, DB
+- Phase 2 (Core Features): ✅ Complete — sync_data, AI container, Interactions, Structured logging
+- Phase 3 (Management & Interaction): Planned
+- Phase 4 (Polish): Planned
+
+**Guides:** [Setup](guides/SETUP.md) | [Testing](guides/TESTING.md) | [API Reference](guides/API.md)
+
 ---
 
 ## 1. Project Structure
@@ -305,9 +313,10 @@ POST   /api/v1/auth/change-password   # Change password
 ```
 GET    /api/v1/devices                # List user's devices (owned + shared)
 POST   /api/v1/devices                # Register device (pairing)
+                                        # Body: { mac } — MAC (BLE) = device identity
                                         # → returns { device_id, admin_secret }
-                                        # admin_secret = HMAC-SHA256(device_token, SERVER_SECRET_KEY)
-                                        # Re-register (same MAC, same owner) → update token, trả admin_secret mới
+                                        # admin_secret = HMAC-SHA256(mac, SERVER_SECRET_KEY)
+                                        # Re-register (same MAC, same owner) → trả admin_secret mới
                                         # Re-register (same MAC, khác owner) → 409 CONFLICT
 GET    /api/v1/devices/:id            # Device detail + current state
 PATCH  /api/v1/devices/:id            # Update config (name, tz, location, log_level)
@@ -315,11 +324,9 @@ DELETE /api/v1/devices/:id            # Unregister device
 
 GET    /api/v1/devices/:id/status     # Realtime status (online, state, battery)
 POST   /api/v1/devices/:id/command    # Send command → WS forward
-POST   /api/v1/devices/:id/token/rotate   # Generate new device_token + new admin_secret
-                                        # Device cần re-provision admin_secret qua BLE
 POST   /api/v1/devices/:id/ble-token     # Admin: generate HMAC token for BLE Level 2
-                                        # admin_secret = HMAC-SHA256(device_token, SERVER_SECRET_KEY)
-                                        # ble_token = HMAC-SHA256(device_token || timestamp, admin_secret)
+                                        # admin_secret = HMAC-SHA256(mac, SERVER_SECRET_KEY)
+                                        # ble_token = HMAC-SHA256(mac || timestamp, admin_secret)
 
 POST   /api/v1/devices/:id/share      # Share with user (email + permission)
 GET    /api/v1/devices/:id/shares     # List shares
@@ -460,7 +467,8 @@ class ConnectionManager:
     # === Message routing ===
 
     async def authenticate_device(self, ws: WebSocket) -> str | None:
-        """Wait for auth message, verify device_token, return device_id or None.
+        """Wait for auth message, verify MAC identity, return device_id or None.
+        MAC (BLE) is the permanent device identity — survives NVS reset.
         Timeout: 5s after WS open."""
         try:
             data = await asyncio.wait_for(ws.receive_text(), timeout=5.0)
@@ -468,10 +476,9 @@ class ConnectionManager:
             if msg.get("type") != "auth":
                 return None
             payload = msg.get("payload", {})
-            token = payload.get("device_token")
             mac = payload.get("mac")
-            # Verify token+mac in DB
-            device = await self.verify_device_token(token, mac)
+            # Lookup device by MAC in DB
+            device = await self.get_device_by_mac(mac)
             if device:
                 await ws.send_json({
                     "type": "auth_result",
@@ -485,7 +492,7 @@ class ConnectionManager:
                     "type": "auth_result",
                     "id": msg.get("id", str(uuid4())),
                     "ts": int(time.time() * 1000),
-                    "payload": {"status": "fail", "reason": "invalid_token"}
+                    "payload": {"status": "fail", "reason": "unknown_device"}
                 })
                 await asyncio.sleep(1)
                 await ws.close(code=4001, reason="auth_failed")

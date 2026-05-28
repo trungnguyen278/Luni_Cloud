@@ -1,0 +1,10 @@
+{
+  "name": "luni-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Next.js frontend — Phase 2' && node server.js",
+    "build": "echo 'Build placeholder'",
+    "start": "node server.js"
+  }
+}

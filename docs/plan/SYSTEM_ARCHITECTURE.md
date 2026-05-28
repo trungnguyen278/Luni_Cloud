@@ -672,10 +672,10 @@ logger.error("ota.download_failed",
 ## 11. Roadmap phát triển
 
 ### Phase 1 — Foundation (4-6 tuần)
-- [ ] Server: Docker Compose (FastAPI + PostgreSQL + Redis + Nginx)
-- [ ] Server: Auth system (JWT + refresh + role-based)
-- [ ] Server: Device registry + WebSocket session manager
-- [ ] Server: Cloudflare Tunnel setup
+- [x] Server: Docker Compose (FastAPI + PostgreSQL + Redis + Nginx)
+- [x] Server: Auth system (JWT + refresh + role-based)
+- [x] Server: Device registry + WebSocket session manager
+- [x] Server: Cloudflare Tunnel setup
 - [ ] Robot: Refactor NetworkManager — bỏ MQTT, WS-only + HTTP OTA
 - [ ] Robot: Thống nhất state machine giữa S3 và C5
 

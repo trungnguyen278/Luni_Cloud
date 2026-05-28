@@ -1,0 +1,133 @@
+# docker-compose.yml — Luni Cloud Production
+# Usage: docker-compose up -d
+
+services:
+  # === FastAPI Backend ===
+  api:
+    build: ./server
+    container_name: luni-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://luni:${DB_PASSWORD}@db:5432/luni
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    volumes:
+      - firmware_storage:/app/storage/firmware
+    networks:
+      - luni-net
+
+  # === PostgreSQL ===
+  db:
+    image: postgres:16-alpine
+    container_name: luni-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: luni
+      POSTGRES_USER: luni
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luni"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luni-net
+
+  # === Redis ===
+  redis:
+    image: redis:7-alpine
+    container_name: luni-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luni-net
+
+  # === Nginx Reverse Proxy ===
+  nginx:
+    image: nginx:alpine
+    container_name: luni-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - web
+    networks:
+      - luni-net
+
+  # === Next.js Frontend ===
+  web:
+    build: ./web
+    container_name: luni-web
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=/api
+      - NEXT_PUBLIC_WS_URL=wss://${DOMAIN}/ws
+    ports:
+      - "3000:3000"
+    networks:
+      - luni-net
+
+  # === AI Gateway (internal only) ===
+  ai:
+    build: ./ai
+    container_name: luni-ai
+    restart: unless-stopped
+    env_file:
+      - ./ai/.env
+    volumes:
+      - ai_models:/app/models
+    networks:
+      - luni-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # === Cloudflare Tunnel ===
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: luni-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    depends_on:
+      - nginx
+    networks:
+      - luni-net
+
+volumes:
+  pg_data:
+  redis_data:
+  firmware_storage:
+  ai_models:
+
+networks:
+  luni-net:
+    driver: bridge

@@ -1,0 +1,60 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# === Virtual environments ===
+venv/
+.venv/
+env/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Environment & secrets ===
+.env
+ai/.env
+!.env.example
+!ai/.env.example
+
+# === Node.js ===
+node_modules/
+.next/
+out/
+
+# === Docker ===
+docker-compose.override.yml
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Testing & linting ===
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# === AI models (downloaded at runtime) ===
+ai/models/*
+!ai/models/.gitkeep
+
+# === Logs & temp ===
+*.log
+tmp/
+temp/
+
+# === Gemini / IDE brain dumps ===
+.gemini/
