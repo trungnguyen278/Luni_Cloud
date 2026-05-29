@@ -28,15 +28,21 @@ luni-cloud/
 ## Quick Start
 
 ```bash
-cp .env.example .env
-# Edit .env with your secrets
+cp .env.example .env          # rồi sửa SECRET_KEY, DB_PASSWORD, DOMAIN, CF_TUNNEL_TOKEN
 docker compose up -d
+docker compose exec api alembic -c /app/alembic.ini upgrade head
+curl http://localhost/api/v1/health   # {"status":"ok",...}
 ```
+
+Dev mode (hot-reload, không cần tunnel): `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`.
 
 ## Documentation
 
-- [System Architecture](docs/plan/SYSTEM_ARCHITECTURE.md) — tổng quan toàn hệ thống
-- [Server & Web Plan](docs/plan/PLAN_SERVER.md) — chi tiết backend + frontend
+📖 **[docs/](docs/README.md)** — index đầy đủ. Một số điểm chính:
+
+- [Architecture](docs/architecture.md) — services, data flow, trạng thái triển khai
+- Modules: [auth](docs/modules/auth.md) · [websocket](docs/modules/websocket.md) · [database](docs/modules/database.md) · [data-pipeline](docs/modules/data-pipeline.md) · [logging](docs/modules/logging.md)
+- Guides: [setup](docs/guides/SETUP.md) · [deployment](docs/guides/DEPLOYMENT.md) · [testing](docs/guides/TESTING.md) · [API](docs/guides/API.md)
 
 ## Related Repos
 

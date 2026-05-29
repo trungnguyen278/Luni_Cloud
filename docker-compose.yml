@@ -8,7 +8,9 @@ services:
     container_name: luni-api
     restart: unless-stopped
     env_file: .env
+    working_dir: /app
     environment:
+      - PYTHONPATH=/app
       - DATABASE_URL=postgresql+asyncpg://luni:${DB_PASSWORD}@db:5432/luni
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -87,6 +89,8 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=/api
       - NEXT_PUBLIC_WS_URL=wss://${DOMAIN}/ws
+    volumes:
+      - ${UI_PREVIEW_PATH:-./web/ui_preview}:/app/ui_preview:ro
     ports:
       - "3000:3000"
     networks:

@@ -11,7 +11,7 @@ Hướng dẫn test từng feature của Phase 1 + Phase 2.
 docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 # Run migration
-docker-compose exec api alembic upgrade head
+docker-compose exec api alembic -c /app/alembic.ini upgrade head
 ```
 
 ## 1. Auth — Đăng ký / Đăng nhập
@@ -83,15 +83,15 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 curl -s -H "Authorization: Bearer $TOKEN" \
   "http://localhost/api/v1/data/calendar" | python -m json.tool
 
-# Ngày cụ thể
+# Ngày cụ thể — Tết Nguyên Đán 2026
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost/api/v1/data/calendar?date=2026-01-29" | python -m json.tool
-# Tết Nguyên Đán 2026 = 29/01/2026 → Âm lịch: 1/1 Bính Ngọ
+  "http://localhost/api/v1/data/calendar?date=2026-02-17" | python -m json.tool
+# Tết Nguyên Đán 2026 = 17/02/2026 → Âm lịch: 1/1 Bính Ngọ
 
 # Ngày đặc biệt — Trung Thu
 curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost/api/v1/data/calendar?date=2026-10-05" | python -m json.tool
-# Trung Thu 2026 → Âm lịch: 15/8
+  "http://localhost/api/v1/data/calendar?date=2026-09-25" | python -m json.tool
+# Trung Thu 2026 = 25/09/2026 → Âm lịch: 15/8 Bính Ngọ
 ```
 
 ## 5. sync_data — Đồng bộ dữ liệu cho device
@@ -106,7 +106,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 # Force push (device phải online qua WS)
 curl -s -X POST -H "Authorization: Bearer $TOKEN" \
   "http://localhost/api/v1/data/sync/AA:BB:CC:DD:EE:FF/push"
-# Nếu device offline: {"detail": "Device AA:BB:CC:DD:EE:FF is offline"}
+# Nếu device offline:
+# {"error": {"code": "DEVICE_OFFLINE", "message": "Device is not currently connected", "details": {"device_id": "AA:BB:CC:DD:EE:FF"}}}
 ```
 
 ## 6. AI Chat — Text interaction
@@ -282,9 +283,9 @@ docker-compose logs ai
 ### Migration fail
 
 ```bash
-docker-compose exec api alembic history    # Xem migration history
-docker-compose exec api alembic current    # Xem version hiện tại
-docker-compose exec api alembic upgrade head --sql  # Preview SQL
+docker-compose exec api alembic -c /app/alembic.ini history    # Xem migration history
+docker-compose exec api alembic -c /app/alembic.ini current    # Xem version hiện tại
+docker-compose exec api alembic -c /app/alembic.ini upgrade head --sql  # Preview SQL
 ```
 
 ### Reset toàn bộ data
@@ -292,5 +293,5 @@ docker-compose exec api alembic upgrade head --sql  # Preview SQL
 ```bash
 docker-compose down -v    # Xoá tất cả volumes
 docker-compose up -d
-docker-compose exec api alembic upgrade head
+docker-compose exec api alembic -c /app/alembic.ini upgrade head
 ```

@@ -7,6 +7,7 @@ JWT token management, password hashing, device token generation.
 import hashlib
 import hmac
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -62,7 +63,7 @@ def create_refresh_token(
             days=settings.jwt_refresh_expire_days
         )
 
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": expire, "type": "refresh", "jti": str(uuid.uuid4())})
     return jwt.encode(to_encode, settings.secret_key, algorithm="HS256")
 
 

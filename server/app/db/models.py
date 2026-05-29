@@ -347,7 +347,7 @@ class Interaction(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
-    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
     source: Mapped[str] = mapped_column(String(10), nullable=False)
     input_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_text: Mapped[str | None] = mapped_column(Text, nullable=True)

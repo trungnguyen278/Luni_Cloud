@@ -149,7 +149,7 @@ Auth: JWT qua query param
 | POST | `/stt` | Audio → text |
 | POST | `/tts` | Text → audio |
 
-Chi tiết API contract: xem [PLAN_PHASE2.md §4.2](../plan/PLAN_PHASE2.md)
+Chi tiết AI gateway contract: xem [modules/data-pipeline.md](../modules/data-pipeline.md)
 
 ---
 

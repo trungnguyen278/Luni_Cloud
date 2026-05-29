@@ -3,6 +3,7 @@ Luni Server — Log schemas.
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -56,8 +57,8 @@ class ServerLogResponse(BaseModel):
     module: str
     message: str
     metadata: dict | None = Field(None, validation_alias="metadata_")
-    request_id: str | None = None
-    user_id: str | None = None
+    request_id: UUID | None = None
+    user_id: UUID | None = None
     device_id: str | None = None
     created_at: datetime
 

@@ -25,6 +25,8 @@ Mở `.env` và sửa các giá trị bắt buộc:
 # BẮT BUỘC — đổi cả hai giá trị này
 SECRET_KEY=<random-64-char-string>
 DB_PASSWORD=<strong-password>
+# Nếu password chứa ký tự $, phải escape thành $$
+# Ví dụ: pa$$word → Docker Compose đọc thành pa$word
 
 # TUỲ CHỌN — weather sẽ trả null nếu không có
 OPENWEATHER_API_KEY=<your-key>
@@ -69,7 +71,7 @@ Khác biệt so với production:
 Sau khi services đã start:
 
 ```bash
-docker-compose exec api alembic upgrade head
+docker-compose exec api alembic -c /app/alembic.ini upgrade head
 ```
 
 Lệnh này tạo tất cả tables cần thiết (users, devices, interactions, logs, ...).
