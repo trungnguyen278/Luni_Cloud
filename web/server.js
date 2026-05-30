@@ -51,6 +51,8 @@ const homepage = `<!DOCTYPE html>
     <p>Web Dashboard — Coming in Phase 3</p>
     <p>API server is running at <code>/api/v1/health</code></p>
     <p><a href="/preview">UI Preview (Emotion Sheet)</a></p>
+    <p><a href="/preview/Luni%20App.html">UI Preview (Luni App)</a></p>
+    <p><a href="/preview/App%20Icon.html">UI Preview (App Icon)</a></p>
     <span class="badge">v0.1.0 — Foundation</span>
   </div>
 </body>
