@@ -14,6 +14,7 @@ import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select, update
 
+from app.core.security import normalize_mac
 from app.db.database import async_session
 from app.db.models import Device
 from app.services.ws_manager import manager
@@ -137,7 +138,7 @@ async def _authenticate_device(ws: WebSocket) -> str | None:
 
         payload = msg.get("payload", {})
         device_token = payload.get("device_token", "")
-        mac = payload.get("mac", "").upper()
+        mac = normalize_mac(payload.get("mac", ""))
 
         if not device_token or not mac:
             await ws.send_json({

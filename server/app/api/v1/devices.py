@@ -4,6 +4,7 @@ Luni Server — Device Management API endpoints.
 CRUD devices, pairing, sharing, commands.
 """
 
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -14,9 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db, get_ws_manager
 from app.core.exceptions import ConflictError, DeviceOfflineError, ForbiddenError, NotFoundError
-from app.core.security import generate_admin_secret, generate_device_token
+from app.core.security import (
+    generate_admin_secret,
+    generate_ble_token,
+    generate_device_token,
+    normalize_mac,
+)
 from app.db.models import Device, DeviceShare, User
 from app.schemas.device import (
+    BleTokenResponse,
     CommandRequest,
     DeviceCreate,
     DeviceRegisterResponse,
@@ -42,6 +49,7 @@ async def _get_device_with_access(
     require_owner: bool = False,
 ) -> Device:
     """Get device and verify user has access (owner or shared)."""
+    device_id = normalize_mac(device_id)
     result = await db.execute(select(Device).where(Device.id == device_id))
     device = result.scalar_one_or_none()
 
@@ -112,7 +120,7 @@ async def register_device(
     Re-register same MAC + same owner → new device_token.
     Re-register same MAC + different owner → 409 CONFLICT.
     """
-    mac = body.mac.upper()
+    mac = body.mac  # already normalized to colon-less 12-hex by the schema
 
     # Check if device already exists
     result = await db.execute(select(Device).where(Device.id == mac))
@@ -230,6 +238,35 @@ async def get_device_status(
     )
 
 
+@router.post("/{device_id}/ble-token", response_model=BleTokenResponse)
+async def issue_ble_token(
+    device_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Issue a short-lived BLE admin (Level 2) token for the app to write to the
+    robot's ADMIN_AUTH characteristic (0x0012).
+
+    The firmware verifies a 36-byte blob: HMAC-SHA256(mac || timestamp_str,
+    admin_secret) (32 bytes) followed by the timestamp as a 4-byte LE integer.
+    We return that blob as hex in `admin_token` so the app can write it
+    verbatim. `mac` here is the canonical colon-less device id, matching the
+    firmware's getDLuniceEfuseID().
+    """
+    device = await _get_device_with_access(device_id, user, db, require_owner=True)
+
+    mac = normalize_mac(device.id)
+    admin_secret = generate_admin_secret(mac)
+    timestamp = int(time.time())
+    hmac_hex = generate_ble_token(mac, admin_secret, timestamp)
+    # Firmware reads the timestamp from the trailing 4 bytes (little-endian).
+    admin_token = hmac_hex + timestamp.to_bytes(4, "little").hex()
+
+    logger.info("device.ble_token_issued", device_id=mac, user_id=str(user.id))
+    return BleTokenResponse(admin_token=admin_token, timestamp=timestamp)
+
+
 @router.post("/{device_id}/command")
 async def send_command(
     device_id: str,
@@ -241,7 +278,6 @@ async def send_command(
     """Send command to device via WebSocket."""
     device = await _get_device_with_access(device_id, user, db)
 
-    import time
     message = {
         "type": body.type,
         "id": str(uuid.uuid4()),

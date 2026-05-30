@@ -77,6 +77,17 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
+def normalize_mac(mac: str) -> str:
+    """
+    Canonical device identity: uppercase, colon/dash-stripped 12-hex.
+
+    The robot firmware (getDLuniceEfuseID) uses this colon-less form
+    everywhere — DEVICE_INFO, the WS auth handshake, and the admin HMAC —
+    so the server stores and matches device ids in the same form.
+    """
+    return mac.replace(":", "").replace("-", "").upper()
+
+
 def generate_device_token() -> str:
     """Generate a random 128-char hex device token for WS auth."""
     return secrets.token_hex(64)

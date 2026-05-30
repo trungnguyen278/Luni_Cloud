@@ -8,13 +8,18 @@ import uuid
 
 import redis.asyncio as aioredis
 import structlog
-from fastapi import Depends, Header, Query
+from fastapi import Depends, Header, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
-from app.core.exceptions import AuthError, ForbiddenError, TokenExpiredError
+from app.core.exceptions import (
+    AuthError,
+    ForbiddenError,
+    RateLimitError,
+    TokenExpiredError,
+)
 from app.core.security import decode_token
 from app.db.database import get_db
 from app.db.models import User
@@ -80,6 +85,32 @@ async def get_redis() -> aioredis.Redis:
             decode_responses=True,
         )
     return manager.redis
+
+
+def rate_limit(key_prefix: str, limit: int, window_seconds: int):
+    """
+    Dependency factory: fixed-window, per-IP rate limit backed by Redis.
+
+    Fails open if Redis is unavailable — an infra outage must never lock all
+    users out of login. Use on auth endpoints to slow credential bruteforce.
+    """
+
+    async def _dependency(request: Request) -> None:
+        try:
+            redis = await get_redis()
+            ip = request.client.host if request.client else "unknown"
+            key = f"ratelimit:{key_prefix}:{ip}"
+            count = await redis.incr(key)
+            if count == 1:
+                await redis.expire(key, window_seconds)
+            if count > limit:
+                raise RateLimitError()
+        except RateLimitError:
+            raise
+        except Exception:
+            logger.warning("rate_limit.redis_unavailable", key_prefix=key_prefix)
+
+    return _dependency
 
 
 def get_ws_manager():

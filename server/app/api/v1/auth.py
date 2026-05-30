@@ -10,7 +10,7 @@ POST /auth/change-password
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, rate_limit
 from app.db.models import User
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -26,7 +26,12 @@ from app.services.auth import AuthService
 router = APIRouter()
 
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=201,
+    dependencies=[Depends(rate_limit("register", limit=5, window_seconds=3600))],
+)
 async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
@@ -36,7 +41,11 @@ async def register(
     return await service.register(body)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit("login", limit=10, window_seconds=300))],
+)
 async def login(
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),

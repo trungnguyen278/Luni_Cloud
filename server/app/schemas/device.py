@@ -5,14 +5,27 @@ Luni Server — Device request/response schemas.
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.security import normalize_mac
 
 
 class DeviceCreate(BaseModel):
     """Register/pair a new device. MAC (BLE) = device identity."""
-    mac: str = Field(..., pattern=r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
-    model: str = Field(default="luni_v2_s3c5", max_length=50)
+    # Accept both colon form (AA:BB:CC:DD:EE:FF) and the robot's native
+    # colon-less form (AABBCCDDEEFF); both normalize to colon-less 12-hex.
+    mac: str = Field(
+        ...,
+        pattern=r"^(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{12})$",
+    )
+    # Default matches the firmware constant app_meta::DLuniCE_MODEL ("Luni-C5").
+    model: str = Field(default="Luni-C5", max_length=50)
     name: str = Field(default="Luni", max_length=100)
+
+    @field_validator("mac")
+    @classmethod
+    def _normalize_mac(cls, v: str) -> str:
+        return normalize_mac(v)
 
 
 class DeviceUpdate(BaseModel):
@@ -53,6 +66,17 @@ class DeviceRegisterResponse(BaseModel):
     device_id: str
     device_token: str
     admin_secret: str
+
+
+class BleTokenResponse(BaseModel):
+    """Short-lived BLE admin (Level 2) token for the ADMIN_AUTH characteristic.
+
+    `admin_token` is hex of HMAC-SHA256(mac || timestamp, admin_secret) (32 bytes)
+    followed by the timestamp as a 4-byte little-endian integer (36 bytes total),
+    written verbatim to the robot.
+    """
+    admin_token: str
+    timestamp: int
 
 
 class DeviceStatusResponse(BaseModel):
