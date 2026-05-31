@@ -118,6 +118,29 @@ Khi không có: `{"available": false}`.
 **POST `/devices/{id}/ota`** — Request `{"firmware_id": "uuid"}` → ghi `ota_history`
 (status `pending`) và gửi `ota_available` qua WS; robot báo `ota_progress` ngược lại.
 
+### Firmware (admin)
+
+| Method | Endpoint | Auth | Mô tả |
+|--------|----------|------|--------|
+| GET | `/admin/firmware` | Admin | List firmware builds + số thiết bị đã cài |
+| POST | `/admin/firmware` | Admin | Upload firmware (multipart) |
+| DELETE | `/admin/firmware/{id}` | Admin | Xoá build + binary |
+| GET | `/firmware/{id}/download` | Public* | Tải binary (robot OTA dùng URL này) |
+
+\* Download công khai theo UUID (id khó đoán = capability) để HTTP OTA client của
+robot tải không cần JWT.
+
+**POST `/admin/firmware`** — `multipart/form-data`:
+- `file` — file `.bin` (≤ 16 MB)
+- `version` — vd `2.1.0`
+- `model` — mặc định `Luni-C5`
+- `channel` — `stable` | `beta`
+- `changelog` — tuỳ chọn
+
+Server tự tính `sha256` + `size`, lưu qua R2 (nếu cấu hình `CF_R2_*`) hoặc volume
+nội bộ, rồi tạo bản ghi `firmware` với `storage_url` trỏ về
+`/api/v1/firmware/{id}/download`. Trùng `(version, model)` → 409.
+
 ## Stats (`/api/v1`)
 
 | Method | Endpoint | Auth | Mô tả |
@@ -141,6 +164,10 @@ Response:
 | POST | `/push/register` | Yes | Lưu FCM token cho user hiện tại |
 
 Request: `{"token": "<fcm_token>", "platform": "fcm"}`.
+
+Server gửi FCM (qua `app.services.push`) khi có sự kiện như device-offline.
+Cần `FCM_CREDENTIALS_FILE` (service-account JSON); nếu trống thì việc gửi tự
+no-op (token vẫn được lưu).
 
 ## Admin Users (`/api/v1/admin/users`)
 

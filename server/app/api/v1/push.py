@@ -3,9 +3,9 @@ Luni Server — Push notification token registration.
 
 POST /push/register  — store an FCM token for the current user.
 
-Note: actual FCM dispatch requires the firebase-admin SDK / service-account
-credentials (not yet a project dependency). This endpoint persists tokens so
-the app stops 404-ing and so a future sender can fan out to them.
+Dispatch is handled by app.services.push (firebase-admin), which fans out to
+these tokens on events like device-offline. Sending no-ops gracefully when
+FCM_CREDENTIALS_FILE is unset, so registration works with or without creds.
 """
 
 import structlog

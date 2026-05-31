@@ -64,6 +64,30 @@ class ConnectionManager:
             "payload": {"last_seen": time.time()},
         })
 
+        # Push to the owner (app may be backgrounded). No-op without FCM creds.
+        await self._push_device_offline(device_id)
+
+    async def _push_device_offline(self, device_id: str):
+        """Best-effort FCM push to the device owner that it went offline."""
+        try:
+            from app.db.database import async_session
+            from app.db.models import Device
+            from app.services.push import send_to_user
+
+            async with async_session() as db:
+                device = await db.get(Device, device_id)
+                if not device:
+                    return
+                await send_to_user(
+                    db,
+                    device.owner_id,
+                    title="Robot ngoại tuyến",
+                    body=f"{device.name} vừa ngắt kết nối.",
+                    data={"type": "device_offline", "device_id": device_id},
+                )
+        except Exception as e:
+            logger.warning("ws.push_offline_failed", device_id=device_id, error=str(e))
+
     async def send_to_device(self, device_id: str, message: dict) -> bool:
         """Send JSON command to device. Returns False if offline."""
         ws = self.device_connections.get(device_id)
