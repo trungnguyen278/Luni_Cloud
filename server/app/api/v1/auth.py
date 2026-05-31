@@ -7,10 +7,16 @@ PATCH /auth/me
 POST /auth/change-password
 """
 
+import secrets
+
+import structlog
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, rate_limit
+from app.api.deps import get_current_user, get_db, get_redis, rate_limit
 from app.db.models import User
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -23,7 +29,13 @@ from app.schemas.auth import (
 )
 from app.services.auth import AuthService
 
+logger = structlog.get_logger()
+
 router = APIRouter()
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., max_length=255)
 
 
 @router.post(
@@ -105,4 +117,41 @@ async def change_password(
     """Change current user's password."""
     service = AuthService(db)
     await service.change_password(user, body)
+    return {"status": "ok"}
+
+
+@router.post(
+    "/forgot-password",
+    dependencies=[
+        Depends(rate_limit("forgot_password", limit=5, window_seconds=3600))
+    ],
+)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """
+    Begin a password reset.
+
+    Always responds 200 (never reveals whether the email exists). When the
+    account exists, a single-use reset token is stored in Redis (1h TTL) and
+    logged — wire an email/SMS sender here when delivery infra is available.
+    """
+    email = body.email.strip().lower()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    if user and user.is_active:
+        token = secrets.token_urlsafe(32)
+        try:
+            await redis.setex(f"pwreset:{token}", 3600, str(user.id))
+        except Exception:
+            logger.warning("auth.password_reset_redis_unavailable")
+        logger.info(
+            "auth.password_reset_requested",
+            user_id=str(user.id),
+            reset_token=token,
+        )
+
     return {"status": "ok"}

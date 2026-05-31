@@ -362,3 +362,33 @@ class Interaction(Base):
         Index("idx_interactions_device", "device_id", created_at.desc()),
         Index("idx_interactions_user", "user_id", created_at.desc()),
     )
+
+
+# ==========================================
+# PUSH NOTIFICATIONS
+# ==========================================
+
+
+class PushToken(Base):
+    __tablename__ = "push_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False, default="fcm")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_push_tokens_user", "user_id"),
+    )

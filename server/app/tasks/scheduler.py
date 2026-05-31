@@ -17,6 +17,7 @@ def start_scheduler():
         import app.tasks.weather_sync  # noqa: F401
         import app.tasks.calendar_sync  # noqa: F401
         import app.tasks.log_cleanup  # noqa: F401
+        import app.tasks.usage_aggregate  # noqa: F401
 
         scheduler.start()
         logger.info("scheduler.started")

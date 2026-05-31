@@ -17,6 +17,7 @@ Auth: `Authorization: Bearer <access_token>` (trừ register, login)
 | GET | `/auth/me` | Yes | Xem profile |
 | PATCH | `/auth/me` | Yes | Cập nhật profile (name, avatar_url) |
 | POST | `/auth/change-password` | Yes | Đổi mật khẩu |
+| POST | `/auth/forgot-password` | No | Bắt đầu khôi phục mật khẩu (luôn trả 200; reset token lưu Redis 1h) |
 
 ## Devices (`/api/v1/devices`)
 
@@ -91,6 +92,56 @@ Response 503 (AI unavailable):
 **Server logs query params:**
 - `level`, `module`, `request_id`, `limit`, `offset`
 
+## OTA / Firmware (`/api/v1`)
+
+| Method | Endpoint | Auth | Mô tả |
+|--------|----------|------|--------|
+| GET | `/ota/check?device_id=&current_version=` | Yes | Có firmware mới cho model của device không |
+| POST | `/devices/{id}/ota` | Owner | Gửi `ota_available` tới device để bắt đầu update |
+
+**GET `/ota/check`** — Response khi có bản mới:
+```json
+{
+  "available": true,
+  "firmware_id": "uuid",
+  "version": "2.1.0",
+  "model": "Luni-C5",
+  "sha256": "…",
+  "size": 1048576,
+  "changelog": "…",
+  "channel": "stable",
+  "created_at": "2026-05-31T00:00:00+00:00"
+}
+```
+Khi không có: `{"available": false}`.
+
+**POST `/devices/{id}/ota`** — Request `{"firmware_id": "uuid"}` → ghi `ota_history`
+(status `pending`) và gửi `ota_available` qua WS; robot báo `ota_progress` ngược lại.
+
+## Stats (`/api/v1`)
+
+| Method | Endpoint | Auth | Mô tả |
+|--------|----------|------|--------|
+| GET | `/devices/{id}/stats?days=7` | Yes | Tổng hợp tương tác/uptime/audio/cảnh báo |
+
+Response:
+```json
+{
+  "daily_interactions": [3, 5, 0, 8, 2, 6, 4],
+  "uptime_today": "5h 12m",
+  "audio_minutes": "3 phút",
+  "warnings": 1
+}
+```
+
+## Push (`/api/v1`)
+
+| Method | Endpoint | Auth | Mô tả |
+|--------|----------|------|--------|
+| POST | `/push/register` | Yes | Lưu FCM token cho user hiện tại |
+
+Request: `{"token": "<fcm_token>", "platform": "fcm"}`.
+
 ## Admin Users (`/api/v1/admin/users`)
 
 | Method | Endpoint | Auth | Mô tả |
@@ -104,7 +155,11 @@ Response 503 (AI unavailable):
 
 ## WebSocket
 
-### Device WS: `ws://host/ws/device`
+### Device WS: `wss://host/ws/device` (prod) / `ws://host/ws/device` (dev)
+
+> Prod đứng sau Cloudflare (TLS-only) nên robot mặc định dùng `wss://`. Firmware
+> default: `wss://lunirobot.io.vn/ws/device` (`DeviceProfile.cpp`), app có thể
+> ghi đè qua BLE provisioning.
 
 Auth: gửi auth message sau khi connect (timeout 5s)
 
