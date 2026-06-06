@@ -110,9 +110,37 @@ async def device_stats(
     ).scalar_one_or_none()
     uptime_secs = int(usage.uptime_secs) if usage and usage.uptime_secs else 0
 
+    # Battery history — min_battery per day from usage_stats over the window.
+    batt_rows = await db.execute(
+        select(UsageStat.date, UsageStat.min_battery).where(
+            UsageStat.device_id == device.id,
+            UsageStat.date >= window_start.date(),
+        )
+    )
+    batt_map: dict[str, int | None] = {}
+    for dt, mb in batt_rows.all():
+        key = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
+        batt_map[key] = int(mb) if mb is not None else None
+    battery = [batt_map.get((window_start + timedelta(days=i)).date().isoformat()) for i in range(days)]
+
+    # Emotion distribution over the window.
+    emo_rows = await db.execute(
+        select(Interaction.emotion, func.count())
+        .where(
+            Interaction.device_id == device.id,
+            Interaction.created_at >= window_start,
+            Interaction.emotion.isnot(None),
+        )
+        .group_by(Interaction.emotion)
+        .order_by(func.count().desc())
+    )
+    emotions = [{"emotion": e, "count": int(n)} for e, n in emo_rows.all()]
+
     return {
         "daily_interactions": daily_interactions,
         "uptime_today": _fmt_uptime(uptime_secs),
         "audio_minutes": f"{audio_secs / 60:.0f} phút",
         "warnings": warnings,
+        "battery": battery,
+        "emotions": emotions,
     }

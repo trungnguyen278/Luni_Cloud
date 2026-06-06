@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     jwt_access_expire_minutes: int = 60
     jwt_refresh_expire_days: int = 30
 
+    # === AI cost estimate (until token-level billing exists) ===
+    ai_cost_per_conv_vnd: int = 372  # estimated VND per conversation turn
+    ai_monthly_budget_vnd: int = 25_000_000  # monthly AI budget shown in console
+
     @property
     def r2_endpoint_url(self) -> str:
         """Cloudflare R2 S3-compatible endpoint."""

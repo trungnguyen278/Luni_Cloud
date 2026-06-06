@@ -6,6 +6,7 @@ Collects all v1 sub-routers into a single router.
 
 from fastapi import APIRouter
 
+from app.api.v1.admin import router as admin_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.data import router as data_router
 from app.api.v1.devices import router as devices_router
@@ -29,3 +30,4 @@ api_router.include_router(stats_router, tags=["stats"])
 api_router.include_router(push_router, tags=["push"])
 api_router.include_router(users_router, prefix="/admin/users", tags=["admin-users"])
 api_router.include_router(logs_router, tags=["logs"])
+api_router.include_router(admin_router, tags=["admin"])

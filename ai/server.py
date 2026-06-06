@@ -4,15 +4,40 @@ Luni AI — Generic AI gateway container.
 Internal API only (accessible via Docker network, not exposed to internet).
 Endpoints follow the contract defined in PLAN_PHASE2.md §4.2.
 
-Current implementation: STUB — returns placeholder responses.
-Replace with real AI backends (Gemini, Ollama, faster-whisper, Piper, etc.)
-as needed. The API contract stays the same regardless of implementation.
+/chat is backed by a 3-tier fallback chain (Google AI Mode -> Gemini -> gemma-4);
+see orchestrator.py and backends/. /stt and /tts remain stubs (501) for now —
+the API contract stays the same regardless of implementation.
 """
 
+import logging
+from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="Luni AI")
+import backends
+import orchestrator
+from config import settings
+
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+logger = structlog.get_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Launch the shared headless browser once (AI Mode primary backend).
+    if backends.aimode.enabled:
+        try:
+            await backends.aimode.startup()
+        except Exception as e:  # noqa: BLE001 - AI Mode is optional; backups remain
+            logger.warning("aimode.startup_failed", error=str(e))
+    yield
+    if backends.aimode.enabled:
+        await backends.aimode.shutdown()
+
+
+app = FastAPI(title="Luni AI", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -25,6 +50,8 @@ async def health():
             "tts": False,
             "vision": False,
         },
+        "chat_order": settings.chat_backends,
+        "backends": {name: b.enabled for name, b in backends.registry.items()},
     }
 
 
@@ -39,13 +66,11 @@ async def chat(body: dict):
     Expected response:
       {"text": "...", "emotion": "neutral"}
     """
-    message = body.get("message", "")
-
-    # STUB: echo back — replace with real LLM
-    return {
-        "text": f"[stub] Tôi nhận được: {message}",
-        "emotion": "neutral",
-    }
+    return await orchestrator.chat(
+        body.get("message", ""),
+        body.get("context"),
+        body.get("history"),
+    )
 
 
 @app.post("/stt")

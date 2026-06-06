@@ -7,21 +7,67 @@ PATCH  /admin/users/:id
 DELETE /admin/users/:id
 """
 
+import secrets
 import uuid
 
 import structlog
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_admin
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
+from app.core.security import hash_password
 from app.db.models import Device, User
 from app.schemas.user import AdminUserUpdate, UserListResponse
 
 logger = structlog.get_logger()
 
 router = APIRouter()
+
+
+class AdminCreateUser(BaseModel):
+    """Admin creates an account (invite). A temp password is generated if omitted."""
+    email: EmailStr
+    name: str = Field(..., min_length=1, max_length=100)
+    role: str = Field(default="user", pattern=r"^(admin|user)$")
+    password: str | None = Field(default=None, min_length=6, max_length=128)
+
+
+@router.post("", status_code=201)
+async def create_user(
+    body: AdminCreateUser,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new account (admin only). Returns the temp password when generated."""
+    existing = await db.execute(select(User).where(User.email == str(body.email)))
+    if existing.scalar_one_or_none():
+        raise ConflictError("Email already registered", {"email": str(body.email)})
+
+    temp_password = body.password or secrets.token_urlsafe(9)
+    user = User(
+        email=str(body.email),
+        name=body.name,
+        role=body.role,
+        password=hash_password(temp_password),
+    )
+    db.add(user)
+    await db.flush()
+
+    logger.info("admin.user_created", user_id=str(user.id), email=user.email, by=admin.email)
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "is_active": user.is_active,
+        "device_count": 0,
+        "created_at": user.created_at.isoformat(),
+        "last_login": None,
+        "temp_password": None if body.password else temp_password,
+    }
 
 
 @router.get("", response_model=list[UserListResponse])

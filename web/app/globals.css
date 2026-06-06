@@ -1,0 +1,25 @@
+/* ============================================================
+   globals.css — static rules that the prototype injected at runtime
+   via document.createElement('style'). Ported to static CSS so they
+   are SSR-safe (no window/document access during render).
+   ============================================================ */
+
+/* from web-shell.jsx _menuStyle */
+.menu-row:hover { background: var(--bg-2); }
+@media (max-width: 1080px) { .topbar-search { display: none !important; } }
+
+/* from web-landing.jsx _lpStyle */
+.lp-navlink:hover,
+.lp-footlink:hover { color: var(--tx-soft) !important; }
+.lp-root { --acc: var(--cyan); }
+@media (max-width: 920px) {
+  .lp-hero-grid { grid-template-columns: 1fr !important; }
+  .lp-feat-grid { grid-template-columns: 1fr 1fr !important; }
+  .lp-foot-grid { grid-template-columns: 1fr 1fr !important; }
+  .lp-nav-links,
+  .lp-status { display: none !important; }
+}
+@media (max-width: 620px) {
+  .lp-feat-grid,
+  .lp-foot-grid { grid-template-columns: 1fr !important; }
+}
