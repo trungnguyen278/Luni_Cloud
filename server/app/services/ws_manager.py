@@ -164,7 +164,23 @@ class ConnectionManager:
     async def handle_device_message(self, device_id: str, data: str | bytes):
         """Route incoming device message (after auth)."""
         if isinstance(data, bytes):
-            await self.handle_audio_uplink(device_id, data)
+            # Binary frames are tagged by their first byte (see firmware
+            # WsProtocol: 0xAA audio uplink, 0xAB audio downlink, 0xAC image).
+            # A camera image is one message: 0xAC + raw JPEG (starts with FFD8).
+            if len(data) >= 3 and data[0] == 0xAC and data[1] == 0xFF and data[2] == 0xD8:
+                await self.handle_image_uplink(device_id, data[1:])
+            else:
+                await self.handle_audio_uplink(device_id, data)
+            return
+
+        # The device sends bare "START"/"END" text to bound a voice turn
+        # (wake word or button). These are NOT JSON.
+        marker = data.strip()
+        if marker == "START":
+            await self.handle_audio_start(device_id)
+            return
+        if marker == "END":
+            await self.handle_audio_silence(device_id)
             return
 
         try:
@@ -255,6 +271,11 @@ class ConnectionManager:
         elif msg_type == "audio_end":
             await self.handle_audio_silence(device_id)
 
+        elif msg_type == "imu":
+            # Low-rate IMU event from the robot (e.g. fall). Sent flat (no
+            # "payload" wrapper) by the firmware via LOG_ENTRY → C5 → WS text.
+            await self.handle_imu_event(device_id, msg)
+
         else:
             logger.warning("ws.unknown_type", device_id=device_id, type=msg_type)
 
@@ -272,10 +293,85 @@ class ConnectionManager:
         if elapsed > 30:
             await self._process_audio(device_id)
 
+    async def handle_audio_start(self, device_id: str):
+        """Begin a new voice turn — reset the audio buffer (device 'START')."""
+        self.audio_buffers[device_id] = []
+        self.audio_start_time[device_id] = time.time()
+        logger.info("ws.audio_start", device_id=device_id)
+
     async def handle_audio_silence(self, device_id: str):
         """Called when silence detected or audio_end message received."""
         if device_id in self.audio_buffers:
             await self._process_audio(device_id)
+
+    # === Camera image ===
+
+    async def handle_image_uplink(self, device_id: str, jpeg: bytes):
+        """A full JPEG camera frame from the robot (tag byte already stripped)."""
+        logger.info("ws.camera_frame", device_id=device_id, size=len(jpeg))
+
+        # Cache the latest frame (REST/vision can read it; short TTL).
+        if self.redis:
+            try:
+                await self.redis.set(f"device:camera:{device_id}", jpeg, ex=60)
+            except Exception as e:
+                logger.warning("ws.image_cache_failed", device_id=device_id, error=str(e))
+
+        # Relay to app viewers as base64 (frames are occasional/on-demand).
+        try:
+            import base64
+            b64 = base64.b64encode(jpeg).decode("ascii")
+            await self.notify_app_clients(device_id, {
+                "type": "camera_frame",
+                "id": str(uuid4()),
+                "ts": int(time.time() * 1000),
+                "payload": {"format": "jpeg", "size": len(jpeg), "data": b64},
+            })
+        except Exception as e:
+            logger.warning("ws.image_forward_failed", device_id=device_id, error=str(e))
+
+        # TODO(vision): send to AI container /vision for relative-position /
+        # other-robot detection, then optionally reply with a motion command.
+
+    # === IMU events ===
+
+    async def handle_imu_event(self, device_id: str, msg: dict):
+        """Relay an IMU event to app viewers; push to owner on fall."""
+        evt = msg.get("evt", "")
+        pitch = msg.get("pitch")
+        roll = msg.get("roll")
+        logger.info("ws.imu_event", device_id=device_id, evt=evt, pitch=pitch, roll=roll)
+
+        await self.notify_app_clients(device_id, {
+            "type": "imu",
+            "id": str(uuid4()),
+            "ts": int(time.time() * 1000),
+            "payload": {"evt": evt, "pitch": pitch, "roll": roll},
+        })
+
+        if evt == "fall":
+            await self._push_fall(device_id)
+
+    async def _push_fall(self, device_id: str):
+        """Best-effort FCM push to the owner that the robot fell over."""
+        try:
+            from app.db.database import async_session
+            from app.db.models import Device
+            from app.services.push import send_to_user
+
+            async with async_session() as db:
+                device = await db.get(Device, device_id)
+                if not device:
+                    return
+                await send_to_user(
+                    db,
+                    device.owner_id,
+                    title="Robot bị ngã",
+                    body=f"{device.name} vừa bị ngã/nghiêng. Kiểm tra giúp nhé.",
+                    data={"type": "imu_fall", "device_id": device_id},
+                )
+        except Exception as e:
+            logger.warning("ws.push_fall_failed", device_id=device_id, error=str(e))
 
     async def _process_audio(self, device_id: str):
         """Process buffered audio: STT -> Chat -> TTS -> push."""

@@ -63,8 +63,10 @@ async def app_websocket(
                             elif msg_type in (
                                 "set_volume", "set_brightness", "set_emotion",
                                 "set_scene", "reboot", "tts_play", "audio_stop",
+                                "motion", "camera_capture",
                             ):
-                                # Forward command to device
+                                # Forward command to device (robot movement /
+                                # camera capture are relayed by the C5 to the S3).
                                 sent = await manager.send_to_device(device_id, data)
                                 await ws.send_json({
                                     "type": "command_ack",

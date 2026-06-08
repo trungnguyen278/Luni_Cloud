@@ -81,6 +81,12 @@ async def speech_to_text(
     """
     STT endpoint — audio file in, text out.
 
+    Audio format from the robot (firmware AudioConfig): a stream of length-
+    prefixed Opus frames `[len:2 LE][opus]...`, **16 kHz mono, VOIP mode,
+    20 ms frames**. When implementing: split on the 2-byte length prefixes,
+    decode each frame with an Opus decoder at 16000 Hz / 1 channel, concatenate
+    the PCM, then run STT.
+
     Expected response:
       {"text": "transcribed text", "language": "vi"}
     """
