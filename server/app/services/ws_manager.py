@@ -36,6 +36,19 @@ class ConnectionManager:
 
     async def connect_device(self, device_id: str, ws: WebSocket):
         """Device authenticates and joins session."""
+        # A device that reconnects (e.g. after a transient TLS error) opens a
+        # new socket while the old one may not have torn down yet. Close the
+        # stale socket and replace it. Its handler will call disconnect_device()
+        # with its own ws, which the identity guard below turns into a no-op so
+        # it cannot clobber this live connection or flip is_online=False.
+        existing = self.device_connections.get(device_id)
+        if existing is not None and existing is not ws:
+            logger.info("ws.device_replaced", device_id=device_id)
+            try:
+                await existing.close(code=4004, reason="replaced_by_new_connection")
+            except Exception:
+                pass
+
         self.device_connections[device_id] = ws
         self.last_heartbeat[device_id] = time.time()
 
@@ -49,8 +62,20 @@ class ConnectionManager:
             "payload": {},
         })
 
-    async def disconnect_device(self, device_id: str):
-        """Device disconnected."""
+    async def disconnect_device(self, device_id: str, ws: WebSocket | None = None) -> bool:
+        """Device disconnected.
+
+        Returns True if this call actually tore down the live connection, False
+        if it was a stale socket whose registration had already been replaced by
+        a newer connection (identity guard). Callers should only flip the DB
+        is_online flag when this returns True.
+        """
+        current = self.device_connections.get(device_id)
+        if ws is not None and current is not None and current is not ws:
+            # A newer socket already replaced this one — don't clobber it.
+            logger.info("ws.stale_disconnect_ignored", device_id=device_id)
+            return False
+
         self.device_connections.pop(device_id, None)
         self.last_heartbeat.pop(device_id, None)
 
@@ -66,6 +91,7 @@ class ConnectionManager:
 
         # Push to the owner (app may be backgrounded). No-op without FCM creds.
         await self._push_device_offline(device_id)
+        return True
 
     async def _push_device_offline(self, device_id: str):
         """Best-effort FCM push to the device owner that it went offline."""

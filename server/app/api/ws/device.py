@@ -95,25 +95,28 @@ async def device_websocket(ws: WebSocket):
         logger.error("ws.device_error", device_id=device_id, error=str(e))
 
     finally:
-        # Cleanup on disconnect
+        # Cleanup on disconnect. Pass this socket so the manager can tell a real
+        # teardown from a stale socket that was already replaced by a newer
+        # connection — only mark the device offline in the former case.
         if device_id:
-            await manager.disconnect_device(device_id)
+            cleaned = await manager.disconnect_device(device_id, ws)
 
-            # Mark offline in DB
-            try:
-                from datetime import datetime, timezone
-                async with async_session() as db:
-                    await db.execute(
-                        update(Device)
-                        .where(Device.id == device_id)
-                        .values(
-                            is_online=False,
-                            last_seen=datetime.now(timezone.utc),
+            if cleaned:
+                # Mark offline in DB
+                try:
+                    from datetime import datetime, timezone
+                    async with async_session() as db:
+                        await db.execute(
+                            update(Device)
+                            .where(Device.id == device_id)
+                            .values(
+                                is_online=False,
+                                last_seen=datetime.now(timezone.utc),
+                            )
                         )
-                    )
-                    await db.commit()
-            except Exception as e:
-                logger.error("ws.db_update_failed", device_id=device_id, error=str(e))
+                        await db.commit()
+                except Exception as e:
+                    logger.error("ws.db_update_failed", device_id=device_id, error=str(e))
 
 
 async def _authenticate_device(ws: WebSocket) -> str | None:
