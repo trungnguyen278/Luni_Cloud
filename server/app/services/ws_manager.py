@@ -31,6 +31,10 @@ class ConnectionManager:
         # Audio buffering for voice interaction
         self.audio_buffers: dict[str, list[bytes]] = {}
         self.audio_start_time: dict[str, float] = {}
+        # Camera image reassembly: device_id → {"buf": bytearray, "total": int, "seq": int}
+        # The C5 streams JPEGs one chunk per WS frame (tag 0xAD) since it can't
+        # buffer the whole image; we reassemble here. See handle_image_chunk.
+        self.image_chunks: dict[str, dict] = {}
 
     # === Device connections ===
 
@@ -191,10 +195,13 @@ class ConnectionManager:
         """Route incoming device message (after auth)."""
         if isinstance(data, bytes):
             # Binary frames are tagged by their first byte (see firmware
-            # WsProtocol: 0xAA audio uplink, 0xAB audio downlink, 0xAC image).
-            # A camera image is one message: 0xAC + raw JPEG (starts with FFD8).
+            # WsProtocol: 0xAA audio uplink, 0xAB audio downlink, 0xAC whole image,
+            # 0xAD image chunk). A whole image is one message: 0xAC + raw JPEG
+            # (FFD8). A chunked image is many 0xAD frames reassembled here.
             if len(data) >= 3 and data[0] == 0xAC and data[1] == 0xFF and data[2] == 0xD8:
                 await self.handle_image_uplink(device_id, data[1:])
+            elif len(data) >= 1 and data[0] == 0xAD:
+                await self.handle_image_chunk(device_id, data)
             else:
                 await self.handle_audio_uplink(device_id, data)
             return
@@ -331,6 +338,58 @@ class ConnectionManager:
             await self._process_audio(device_id)
 
     # === Camera image ===
+
+    # Sanity ceiling for a reassembled frame (QVGA RGB565 -> JPEG is tens of KB).
+    _IMAGE_MAX_BYTES = 512 * 1024
+
+    async def handle_image_chunk(self, device_id: str, data: bytes):
+        """Reassemble a chunked JPEG (tag 0xAD). Frame layout mirrors the UART
+        IMAGE_CHUNK payload: [0xAD][seq:2 LE][flags:1][payload]. The FIRST chunk's
+        payload begins with [total:4 LE][w:2][h:2] then JPEG bytes; later chunks
+        are raw JPEG continuation. On the LAST chunk the full JPEG is handed to
+        handle_image_uplink (cache + relay to app), exactly like a whole image."""
+        FLAG_FIRST, FLAG_LAST = 0x01, 0x02
+        if len(data) < 4:
+            return
+        seq = data[1] | (data[2] << 8)
+        flags = data[3]
+        payload = data[4:]
+
+        if flags & FLAG_FIRST:
+            if len(payload) < 8:
+                return
+            total = int.from_bytes(payload[0:4], "little")
+            if total == 0 or total > self._IMAGE_MAX_BYTES:
+                logger.warning("ws.image_chunk_bad_total", device_id=device_id, total=total)
+                self.image_chunks.pop(device_id, None)
+                return
+            self.image_chunks[device_id] = {
+                "buf": bytearray(payload[8:]),
+                "total": total,
+                "seq": seq,
+            }
+        else:
+            st = self.image_chunks.get(device_id)
+            if st is None:
+                return  # missed the first chunk; wait for the next frame
+            if seq != st["seq"] + 1:
+                logger.warning("ws.image_chunk_gap", device_id=device_id,
+                               got=seq, expected=st["seq"] + 1)
+                self.image_chunks.pop(device_id, None)
+                return
+            st["seq"] = seq
+            st["buf"].extend(payload)
+
+        if flags & FLAG_LAST:
+            st = self.image_chunks.pop(device_id, None)
+            if st is None:
+                return
+            jpeg = bytes(st["buf"])
+            if len(jpeg) != st["total"]:
+                logger.warning("ws.image_incomplete", device_id=device_id,
+                               got=len(jpeg), total=st["total"])
+                return
+            await self.handle_image_uplink(device_id, jpeg)
 
     async def handle_image_uplink(self, device_id: str, jpeg: bytes):
         """A full JPEG camera frame from the robot (tag byte already stripped)."""
